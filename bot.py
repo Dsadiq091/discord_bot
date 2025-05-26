@@ -211,24 +211,38 @@ async def hourly_signup():
         if channel:
             global signed_up_users, signup_message_id
             signed_up_users = set()
-            msg = await channel.send(f"<@&{role_id}> Put '+' to sign up for the informal.")
-            signup_message_id = msg.id
-            await msg.add_reaction("➕")
+            # Check if it's a forum channel
+            if hasattr(channel, 'create_thread'):
+                # For forum channels, create a new thread
+                thread = await channel.create_thread(
+                    name=f"Informal Signup - {now.strftime('%H:%M')}",
+                    content=f"<@&{role_id}> Put '+' to sign up for the informal."
+                )
+                signup_message_id = thread.id
+                await thread.add_reaction("➕")
+            else:
+                # For regular text channels
+                msg = await channel.send(f"<@&{role_id}> Put '+' to sign up for the informal.")
+                signup_message_id = msg.id
+                await msg.add_reaction("➕")
 
 @bot.event
 async def on_raw_reaction_add(payload):
     global signup_message_id
-    if payload.message_id == signup_message_id and str(payload.emoji) == "➕":
+    # Check if the reaction is on the signup message/thread
+    if (payload.message_id == signup_message_id or payload.channel_id == signup_message_id) and str(payload.emoji) == "➕":
         user = payload.member
         if user and not user.bot:
             if user.id not in signed_up_users and len(signed_up_users) < 10:
                 signed_up_users.add(user.id)
             elif user.id in signed_up_users:
                 channel = bot.get_channel(payload.channel_id)
-                await channel.send(f"{user.display_name}, you're already signed up.")
+                if hasattr(channel, 'send'):
+                    await channel.send(f"{user.display_name}, you're already signed up.")
             else:
                 channel = bot.get_channel(payload.channel_id)
-                await channel.send("⛔ Sign-up limit reached (10 members).")
+                if hasattr(channel, 'send'):
+                    await channel.send("⛔ Sign-up limit reached (10 members).")
 
 @bot.command()
 async def signuplist(ctx):
