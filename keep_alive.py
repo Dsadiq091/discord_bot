@@ -1,4 +1,4 @@
-
+# keep_alive.py
 from flask import Flask
 from threading import Thread
 
@@ -9,4 +9,5 @@ def home():
     return "I'm alive"
 
 def keep_alive():
-    Thread(target=lambda: app.run(host='0.0.0.0', port=5000)).start()
+    # Use port 8080 for Replit
+    Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()

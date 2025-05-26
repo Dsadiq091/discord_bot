@@ -240,6 +240,8 @@ async def signuplist(ctx):
 
 # --- Run the bot ---
 if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
     keep_alive()  # ✅ Start the web server for uptime ping
-    bot.run(TOKEN)  # Then start your bot
+    bot.run(TOKEN)
+      # Then start your bot
 
