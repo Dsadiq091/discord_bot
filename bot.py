@@ -1,18 +1,28 @@
+from keep_alive import keep_alive  # ✅ Import the web server for Replit pinging
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import json
+import os
 from dotenv import load_dotenv
-from keep_alive import keep_alive
-import os 
+import pytz
+from datetime import datetime
 
+# Load .env variables
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
-keep_alive()
 
+# Setup intents
 intents = discord.Intents.default()
 intents.message_content = True
+intents.reactions = True
+intents.members = True
+
+# Initialize bot
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ✅ Start the Replit web server before running the bot
+
+# --- Data Handling ---
 DATA_FILE = "data.json"
 
 def load_data():
@@ -25,9 +35,11 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
+# --- Event and Command Definitions ---
 @bot.event
 async def on_ready():
-    print(f"✅ Logged in as {bot.user.name}")
+    print(f"✅ Bot is ready as {bot.user}")
+    hourly_signup.start()
 
 @bot.command()
 async def add(ctx, event_type, result, time, date, *, player_data):
@@ -128,7 +140,7 @@ async def summary(ctx):
         msg += f"👤 **{data['name']}** | 🆔 {pid}\n"
         msg += f"Kills: {data['kills']}, Base: ${data['base']:,}, Special: ${data['special']:,}, Total: ${data['total']:,}\n"
         msg += f"Status: {status}\n\n"
-    await ctx.send(msg)
+    await ctx.send(msg[:1900] if len(msg) > 1900 else msg)
 
 @bot.command()
 async def showall(ctx):
@@ -178,74 +190,45 @@ async def help_command(ctx):
 
 __Main Commands__:
 - `!add <event_type> <Win/Loss> <time> <date> <PlayerID|PlayerName|Kills> ...`
-  ➤ Adds player data and calculates bonuses.
-  ➤ Example:
-    `!add Informal Win 10:30 2024-05-26 101|John Doe|5 102|Jane Smith|3`
-
 - `!summary`
-  ➤ Shows all stored data with total bonuses (player not repeated).
-
-- `!markpaid <PlayerID>` or `!markdue <PlayerID>`
-  ➤ Marks a player’s status.
-
-- `!proof <image_url>`
-  ➤ Adds proof image to be shown in summary.
-
-- `!clear`
-  ➤ Admin only. Clears all stored data.
-
-- `!showproof`
-  ➤ Displays the last proof image uploaded.
-
-__Note__:
-- Use `|` between PlayerID, Name, and Kills.
-- Event types and Win/Loss are **case-sensitive**.
-- You can add multiple players in one `!add` command.
-
-__Example Workflow__:
-1. `!add Informal Win 10:30 2024-05-26 101|John|5 102|Jane|3`
-2. `!proof https://i.imgur.com/sample.png`
-3. `!summary`
-4. `!markpaid 101`
+- `!mark <PlayerID> <Paid/Due>`
+- `!clearall`
+- `!showall`
     """
     await ctx.send(help_text)
 
-from discord.ext import tasks
-import pytz
-from datetime import datetime
-
-signup_channel_id = 1365834529549582416  # replace with your channel ID
-role_id = 1365837910963785808
-
+# --- Hourly Signup Feature ---
+signup_channel_id = 1365834529549582416  # Replace with your real channel ID
+role_id = 1365837910963785808  # Replace with your real role ID
 signed_up_users = set()
 signup_message_id = None
 
 @tasks.loop(minutes=1)
 async def hourly_signup():
     now = datetime.now(pytz.timezone('Asia/Kolkata'))
-    if now.minute == 0:  # At the top of every hour
+    if now.minute == 0:
         channel = bot.get_channel(signup_channel_id)
         if channel:
             global signed_up_users, signup_message_id
-            signed_up_users = set()  # reset
-            msg = await channel.send(f"<@&{1365837910963785808}> Put '+' to sign up for the informal.")
+            signed_up_users = set()
+            msg = await channel.send(f"<@&{role_id}> Put '+' to sign up for the informal.")
             signup_message_id = msg.id
             await msg.add_reaction("➕")
 
 @bot.event
 async def on_raw_reaction_add(payload):
+    global signup_message_id
     if payload.message_id == signup_message_id and str(payload.emoji) == "➕":
         user = payload.member
-        if user.bot:
-            return
-        if user.id not in signed_up_users and len(signed_up_users) < 10:
-            signed_up_users.add(user.id)
-        elif len(signed_up_users) >= 10:
-            channel = bot.get_channel(payload.channel_id)
-            await channel.send("⛔ Sign-up limit reached (10 members).")
-        elif user.id in signed_up_users:
-            channel = bot.get_channel(payload.channel_id)
-            await channel.send(f"{user.display_name}, you're already signed up.")
+        if user and not user.bot:
+            if user.id not in signed_up_users and len(signed_up_users) < 10:
+                signed_up_users.add(user.id)
+            elif user.id in signed_up_users:
+                channel = bot.get_channel(payload.channel_id)
+                await channel.send(f"{user.display_name}, you're already signed up.")
+            else:
+                channel = bot.get_channel(payload.channel_id)
+                await channel.send("⛔ Sign-up limit reached (10 members).")
 
 @bot.command()
 async def signuplist(ctx):
@@ -255,11 +238,9 @@ async def signuplist(ctx):
         names = [bot.get_user(uid).mention for uid in signed_up_users]
         await ctx.send("✅ Signed-up Users:\n" + "\n".join(names))
 
-@bot.event
-async def on_ready():
-    hourly_signup.start()
-    print(f"Bot is ready and running as {bot.user}")
-
-
+# --- Run the bot ---
 if __name__ == "__main__":
+    keep_alive()  # ✅ Start the web server for uptime ping
     bot.run(TOKEN)
+      # Then start your bot
+
