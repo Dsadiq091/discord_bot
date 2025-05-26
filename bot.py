@@ -2,10 +2,13 @@ import discord
 from discord.ext import commands
 import json
 from dotenv import load_dotenv
-import os
+from keep_alive import keep_alive
+import os 
+keep_alive()
+bot.run(os.environ['TOKEN'])
 
 load_dotenv()
-TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+TOKEN = os.getenv("TOKEN")
 
 intents = discord.Intents.default()
 intents.message_content = True
