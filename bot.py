@@ -4,11 +4,10 @@ import json
 from dotenv import load_dotenv
 from keep_alive import keep_alive
 import os 
-keep_alive()
-bot.run(os.environ['TOKEN'])
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
+keep_alive()
 
 intents = discord.Intents.default()
 intents.message_content = True
