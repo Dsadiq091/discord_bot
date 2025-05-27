@@ -1,4 +1,3 @@
-```python
 import os
 import json
 import pytz
@@ -213,4 +212,4 @@ async def on_raw_reaction_add(payload):
 if __name__ == '__main__':
     keep_alive()
     bot.run(TOKEN)
-```
+
