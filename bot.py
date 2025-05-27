@@ -12,8 +12,7 @@ load_dotenv()
 TOKEN = os.getenv("TOKEN")
 
 # Setup intents
-intents = discord.Intents.default()
-intents.message_content = True
+intents = discord.Intents.all()
 intents.reactions = True
 intents.members = True
 
