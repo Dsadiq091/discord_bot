@@ -77,13 +77,29 @@ def calculate_bonus(event_type, result, time, kills):
 # --- Commands ---
 @bot.command()
 async def add(ctx, event_type, result, time, date, *, player_data):
+    # Admin role check
+    admin_role = discord.utils.get(ctx.author.roles, name="Admin")
+    if not admin_role:
+        await ctx.send("❌ Only users with the `Admin` role can add data.")
+        return
+
     entries = load_data()
     attachment_url = ctx.message.attachments[0].url if ctx.message.attachments else None
     lines = player_data.strip().split("\n")
+    
     for line in lines:
         try:
             name, pid, kills = [x.strip() for x in line.split("|")]
             kills = int(kills)
+
+            # Validate name (alphabet only) and ID (digits only)
+            if not name.isalpha():
+                await ctx.send(f"❌ Invalid name in line: `{line}`. Name must contain only alphabets.")
+                return
+            if not pid.isdigit():
+                await ctx.send(f"❌ Invalid ID in line: `{line}`. ID must be numeric.")
+                return
+
         except:
             await ctx.send(f"⚠️ Invalid format in line: `{line}`. Use `Name|ID|Kills`.")
             return
@@ -105,8 +121,10 @@ async def add(ctx, event_type, result, time, date, *, player_data):
             "proof": attachment_url
         }
         entries.append(entry)
+
     save_data(entries)
     await ctx.send("✅ Data added successfully!")
+
 
 @bot.command()
 async def summary(ctx):
@@ -157,6 +175,11 @@ async def showall(ctx):
 
 @bot.command()
 async def mark(ctx, pid, status):
+    admin_role = discord.utils.get(ctx.author.roles, name="Admin")
+    if not admin_role:
+        await ctx.send("❌ Only users with the `Admin` role can mark entries.")
+        return
+
     status = status.capitalize()
     if status not in ["Paid", "Due"]:
         await ctx.send("❌ Status must be either `Paid` or `Due`.")
@@ -169,6 +192,7 @@ async def mark(ctx, pid, status):
             count += 1
     save_data(entries)
     await ctx.send(f"✅ Marked {count} entries for ID `{pid}` as `{status}`.")
+
 
 @bot.command()
 async def clear(ctx, pid):
@@ -218,6 +242,12 @@ role_id = 1365837910963785808  # Replace with your real role ID
 signed_up_users = set()
 signup_message_id = None
 
+async def wait_until_next_hour():
+    now = datetime.now(pytz.timezone('Asia/Kolkata'))
+    seconds_until_next_hour = (60 - now.minute - 1) * 60 + (60 - now.second)
+    print(f"⏳ Waiting {seconds_until_next_hour} seconds until the next full hour...")
+    await asyncio.sleep(seconds_until_next_hour)
+
 @tasks.loop(hours=1)
 async def hourly_signup():
     channel = bot.get_channel(signup_channel_id)
@@ -232,13 +262,9 @@ async def hourly_signup():
 async def on_ready():
     print(f"✅ Bot is ready as {bot.user}")
     if not hourly_signup.is_running():
-        now = datetime.now(pytz.timezone("Asia/Kolkata"))
-        seconds_until_next_hour = 3600 - (now.minute * 60 + now.second)
-        print(f"⏳ Waiting {seconds_until_next_hour} seconds to start hourly signup...")
-        await asyncio.sleep(seconds_until_next_hour)
+        await wait_until_next_hour()
         hourly_signup.start()
-        print(f"<@&{role_id}> Put '+' to sign up for the informal.")
-
+        print("📤 Hourly signup started at the top of the hour.")
 
 @bot.command()
 async def signuplist(ctx):
