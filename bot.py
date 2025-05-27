@@ -170,6 +170,24 @@ async def mark(ctx, pid, status):
     await ctx.send(f"✅ Marked {count} entries for ID `{pid}` as `{status}`.")
 
 @bot.command()
+async def clear(ctx, pid):
+    admin_role = discord.utils.get(ctx.author.roles, name="Admin")
+    if not admin_role:
+        await ctx.send("❌ Only users with the `Admin` role can clear player data.")
+        return
+
+    entries = load_data()
+    original_length = len(entries)
+    entries = [entry for entry in entries if entry["id"] != pid]
+    removed_count = original_length - len(entries)
+
+    if removed_count > 0:
+        save_data(entries)
+        await ctx.send(f"🧹 Removed {removed_count} entries for player ID `{pid}`.")
+    else:
+        await ctx.send(f"⚠️ No data found for player ID `{pid}`.")
+
+@bot.command()
 async def clearall(ctx):
     admin_role = discord.utils.get(ctx.author.roles, name="Admin")
     if not admin_role:
