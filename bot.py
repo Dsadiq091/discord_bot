@@ -1,12 +1,12 @@
 from keep_alive import keep_alive  # ✅ Import the web server for Replit pinging
 import discord
-from discord.ext import commands, tasks
 import json
 import os
 from dotenv import load_dotenv
-import pytz
 import asyncio
+import pytz
 from datetime import datetime
+from discord.ext import commands, tasks
 
 # Load .env variables
 load_dotenv()
@@ -243,16 +243,18 @@ signed_up_users = set()
 signup_message_id = None
 
 async def wait_until_next_hour():
-    now = datetime.now(pytz.timezone('Asia/Kolkata'))
+    tz = pytz.timezone('Asia/Kolkata')
+    now = datetime.now(tz)
     next_hour = now.replace(minute=0, second=0, microsecond=0)
     if now.minute != 0 or now.second != 0:
         next_hour = next_hour.replace(hour=(now.hour + 1) % 24)
     wait_seconds = (next_hour - now).total_seconds()
-    print(f"⏳ Waiting {int(wait_seconds)} seconds until {next_hour.time()}...")
+    print(f"⏳ Waiting {int(wait_seconds)} seconds until next hour...")
     await asyncio.sleep(wait_seconds)
 
 @tasks.loop(hours=1)
 async def hourly_signup():
+    print("📤 Running hourly signup task...")
     channel = bot.get_channel(signup_channel_id)
     if channel:
         global signed_up_users, signup_message_id
@@ -264,10 +266,11 @@ async def hourly_signup():
 @bot.event
 async def on_ready():
     print(f"✅ Bot is ready as {bot.user}")
+    await bot.wait_until_ready()  # <-- 🛠️ Ensures bot is fully ready
     if not hourly_signup.is_running():
-        await wait_until_next_hour()
+        await wait_until_next_hour()  # <-- 🕒 Waits until the next hour mark
         hourly_signup.start()
-        print("📤 Hourly signup task started.")
+        print("📌 Hourly signup task started.")
         
 @bot.command()
 async def signuplist(ctx):
