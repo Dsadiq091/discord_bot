@@ -1,4 +1,4 @@
-from keep_alive import keep_alive  # ✅ Import the web server for Replit pinging
+from keep_alive import keep_alive
 import discord
 import json
 import os
@@ -8,21 +8,15 @@ import pytz
 from datetime import datetime
 from discord.ext import commands, tasks
 
-# Load .env variables
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 
-# Setup intents
 intents = discord.Intents.all()
 intents.reactions = True
 intents.members = True
 
-# Initialize bot
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ✅ Start the Replit web server before running the bot
-
-# --- Data Handling ---
 DATA_FILE = "data.json"
 
 def load_data():
@@ -35,7 +29,6 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
-# --- Bonus Calculation ---
 def calculate_bonus(event_type, result, time, kills):
     base_bonus = 0
     special_bonus = 0
@@ -74,10 +67,8 @@ def calculate_bonus(event_type, result, time, kills):
         base_bonus = kills * 20000
     return base_bonus, special_bonus
 
-# --- Commands ---
 @bot.command()
 async def add(ctx, event_type, result, time, date, *, player_data):
-    # Admin role check
     admin_role = discord.utils.get(ctx.author.roles, name="Admin")
     if not admin_role:
         await ctx.send("❌ Only users with the `Admin` role can add data.")
@@ -92,7 +83,6 @@ async def add(ctx, event_type, result, time, date, *, player_data):
             name, pid, kills = [x.strip() for x in line.split("|")]
             kills = int(kills)
 
-            # Validate name (alphabet only) and ID (digits only)
             if not name.isalpha():
                 await ctx.send(f"❌ Invalid name in line: `{line}`. Name must contain only alphabets.")
                 return
@@ -124,7 +114,6 @@ async def add(ctx, event_type, result, time, date, *, player_data):
 
     save_data(entries)
     await ctx.send("✅ Data added successfully!")
-
 
 @bot.command()
 async def summary(ctx):
@@ -192,7 +181,6 @@ async def mark(ctx, pid, status):
             count += 1
     save_data(entries)
     await ctx.send(f"✅ Marked {count} entries for ID `{pid}` as `{status}`.")
-
 
 @bot.command()
 async def clear(ctx, pid):
@@ -263,15 +251,6 @@ async def hourly_signup():
         signup_message_id = msg.id
         await msg.add_reaction("➕")
 
-@bot.event
-async def on_ready():
-    print(f"✅ Bot is ready as {bot.user}")
-    await bot.wait_until_ready()  # <-- 🛠️ Ensures bot is fully ready
-    if not hourly_signup.is_running():
-        await wait_until_next_hour()  # <-- 🕒 Waits until the next hour mark
-        hourly_signup.start()
-        print("📌 Hourly signup task started.")
-        
 @bot.command()
 async def signuplist(ctx):
     if not signed_up_users:
@@ -283,7 +262,11 @@ async def signuplist(ctx):
 @bot.event
 async def on_ready():
     print(f"✅ Bot is ready as {bot.user}")
-    hourly_signup.start()
+    await bot.wait_until_ready()
+    if not hourly_signup.is_running():
+        await wait_until_next_hour()
+        hourly_signup.start()
+        print("📌 Hourly signup task started.")
 
 # --- Run the bot ---
 if __name__ == '__main__':
