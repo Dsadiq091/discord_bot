@@ -1,3 +1,4 @@
+print("✅ Script started")  # very top
 from keep_alive import keep_alive
 import discord
 from discord.ext import tasks
@@ -254,3 +255,7 @@ async def signuplist(interaction: discord.Interaction):
 if __name__ == '__main__':
     keep_alive()
     bot.run(TOKEN)
+    
+@bot.event
+async def on_ready():
+    print(f"✅ Bot is ready as {bot.user}")
