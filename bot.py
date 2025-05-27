@@ -1,215 +1,256 @@
-import os
+from keep_alive import keep_alive
+import discord
+from discord.ext import tasks
+from discord import app_commands
 import json
+import os
+from dotenv import load_dotenv
 import pytz
 from datetime import datetime
-from threading import Thread
-from flask import Flask
-import discord
-from discord import app_commands
-from discord.ext import commands, tasks
 
-# --- Web Server to keep bot alive ---
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "I'm alive"
-
-def run_web():
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
-
-# Start web server in background
-def keep_alive():
-    Thread(target=run_web, daemon=True).start()
-
-# --- Bot Setup ---
-from dotenv import load_dotenv
+# Load .env variables
 load_dotenv()
-TOKEN = os.getenv('TOKEN')
+TOKEN = os.getenv("TOKEN")
 
+# Setup intents
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
 intents.members = True
-bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Data storage
-DATA_FILE = 'data.json'
+# Initialize bot
+class MyBot(discord.Client):
+    def __init__(self):
+        super().__init__(intents=intents)
+        self.tree = app_commands.CommandTree(self)
+
+bot = MyBot()
+
+# --- Data Handling ---
+DATA_FILE = "data.json"
 
 def load_data():
     if not os.path.exists(DATA_FILE) or os.path.getsize(DATA_FILE) == 0:
         return []
-    with open(DATA_FILE, 'r') as f:
+    with open(DATA_FILE, "r") as f:
         return json.load(f)
 
-def save_data(d):
-    with open(DATA_FILE, 'w') as f:
-        json.dump(d, f, indent=2)
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
-# --- Bonus Rules Configuration ---
-BONUS_RULES = {
-    'informal':  {'win': 45000, 'loss': 4000},
-    'rpticket':  {},  # special handled below
-    'bizwar':    {'win': 30000, 'loss': 3000},
-    'capturefoundry': {'win': 20000, 'loss': 5000},
-    'weaponfactory':  {'win': 10000, 'loss': 2000},
-    'hoteltakeover': {'win': 25000, 'loss': 5000},
-    'ratingbattle':  {'win': 30000, 'loss': 5000},
-    'sphere':        {'win': 20000, 'defend': 20000, 'loss': 0},
-    'famraid':       {'win': 20000, 'loss': 0},
-    'robbery':       {'win': 30000, 'loss': 0},
-    'shopping':      {'win': 100000, 'loss': 0},
-    'vineyard':      {'win': 30000, 'loss': 0},
-    'harbour':       {'win': 20000, 'loss': 20000},
-}
-# RP Ticket special tickets by time
-RP_TICKET_BONUS = {'10:30': 300000, '16:30': 350000, '22:30': 350000}
-
-# Calculate bonuses
-def calculate_bonus(event_type: str, result: str, time: str, kills: int):
+# --- Bonus Calculation ---
+def calculate_bonus(event_type, result, time, kills):
+    base_bonus = 0
+    special_bonus = 0
     et = event_type.lower()
     res = result.lower()
-    base_rate = BONUS_RULES.get(et, {}).get(res)
-    # Base per-kill bonus if defined
-    base_bonus = base_rate * kills if base_rate is not None else 0
-    # Special RP Ticket bonus
-    special_bonus = 0
-    if et == 'rpticket' and res == 'win':
-        special_bonus = RP_TICKET_BONUS.get(time, 0)
-    # Total
+
+    if et == "informal":
+        base_bonus = kills * (45000 if res == "win" else 4000)
+    elif et == "rpticket":
+        if res == "win":
+            if time == "10:30":
+                special_bonus = 300000
+            elif time in ["16:30", "22:30"]:
+                special_bonus = 350000
+    elif et == "bizwar":
+        base_bonus = kills * (30000 if res == "win" else 3000)
+    elif et == "capturefoundry":
+        base_bonus = kills * (20000 if res == "win" else 5000)
+    elif et == "weaponfactory":
+        base_bonus = kills * (10000 if res == "win" else 2000)
+    elif et == "hoteltakeover":
+        base_bonus = kills * (25000 if res == "win" else 5000)
+    elif et == "ratingbattle":
+        base_bonus = kills * (30000 if res == "win" else 5000)
+    elif et == "sphere":
+        base_bonus = 20000 if res in ["win", "defend"] else 0
+    elif et == "famraid":
+        base_bonus = 20000 if res == "win" else 0
+    elif et == "robbery":
+        base_bonus = 30000 if res == "win" else 0
+    elif et == "shopping":
+        base_bonus = 100000
+    elif et == "vineyard":
+        base_bonus = 30000 if res == "win" else 0
+    elif et == "harbour":
+        base_bonus = kills * 20000
     return base_bonus, special_bonus
 
 # --- Slash Commands ---
 @bot.event
 async def on_ready():
     await bot.tree.sync()
-    hourly_signup.start()
     print(f"✅ Bot is ready as {bot.user}")
+    hourly_signup.start()
 
-@bot.tree.command(name='add', description='Add player(s) bonus data')
-@app_commands.describe(
-    event_type='Type of event', result='Win or Loss',
-    time='Event time (HH:MM)', date='Date (YYYY-MM-DD)',
-    player_data='Lines: Name|ID|Kills (newline separated)')
-async def add_slash(interaction: discord.Interaction, event_type: str,
-                    result: str, time: str, date: str, player_data: str):
+@bot.tree.command(name="add")
+@app_commands.describe(event_type="Type of the event", result="Win or Loss", time="Time of event", date="Date of event", player_data="Player data in Name|ID|Kills format")
+async def add(interaction: discord.Interaction, event_type: str, result: str, time: str, date: str, player_data: str):
     entries = load_data()
-    attachment_url = interaction.message.attachments[0].url if interaction.message and interaction.message.attachments else None
-    for line in player_data.split("\n"):
-        parts = [x.strip() for x in line.split("|")]
-        if len(parts) != 3 or not parts[2].isdigit():
-            await interaction.response.send_message(
-                "⚠️ Use correct format: Name|ID|Kills", ephemeral=True)
+    attachment_url = interaction.attachments[0].url if interaction.attachments else None
+    lines = player_data.strip().split("\n")
+    for line in lines:
+        try:
+            name, pid, kills = [x.strip() for x in line.split("|")]
+            kills = int(kills)
+        except:
+            await interaction.response.send_message(f"⚠️ Invalid format in line: `{line}`. Use `Name|ID|Kills`.", ephemeral=True)
             return
-        name, pid, kills_str = parts
-        kills = int(kills_str)
-        base, special = calculate_bonus(event_type, result, time, kills)
-        entries.append({
-            'name': name, 'id': pid, 'kills': kills,
-            'event_type': event_type, 'result': result,
-            'time': time, 'date': date,
-            'base_bonus': base, 'special_bonus': special,
-            'net_bonus': base + special,
-            'status': 'Due', 'proof': attachment_url
-        })
+
+        base_bonus, special_bonus = calculate_bonus(event_type, result, time, kills)
+        net_bonus = base_bonus + special_bonus
+        entry = {
+            "name": name,
+            "id": pid,
+            "kills": kills,
+            "event_type": event_type,
+            "result": result,
+            "time": time,
+            "date": date,
+            "base_bonus": base_bonus,
+            "special_bonus": special_bonus,
+            "net_bonus": net_bonus,
+            "status": "Due",
+            "proof": attachment_url
+        }
+        entries.append(entry)
     save_data(entries)
-    await interaction.response.send_message("✅ Data added successfully.")
+    await interaction.response.send_message("✅ Data added successfully!")
 
-@bot.tree.command(name='summary', description='Show total bonuses per player')
-async def summary_slash(interaction: discord.Interaction):
+@bot.tree.command(name="summary")
+async def summary(interaction: discord.Interaction):
     entries = load_data()
-    summary = {}
+    summary_dict = {}
     for e in entries:
-        key = (e['id'], e['name'])
-        if key not in summary:
-            summary[key] = {'kills': 0, 'base': 0, 'special': 0, 'total': 0, 'statuses': []}
-        summary[key]['kills'] += e['kills']
-        summary[key]['base'] += e['base_bonus']
-        summary[key]['special'] += e['special_bonus']
-        summary[key]['total'] += e['net_bonus']
-        summary[key]['statuses'].append(e['status'])
-    lines = []
-    for (pid, name), v in summary.items():
-        status = '✅ Paid' if all(s == 'Paid' for s in v['statuses']) else '❌ Due'
-        lines.append(f"{name} ({pid}): Kills {v['kills']}, Total ${v['total']:,}, {status}")
-    await interaction.response.send_message("\n".join(lines) or 'No data.')
+        pid = e["id"]
+        if pid not in summary_dict:
+            summary_dict[pid] = {
+                "name": e["name"],
+                "kills": 0,
+                "base": 0,
+                "special": 0,
+                "total": 0,
+                "statuses": []
+            }
+        summary_dict[pid]["kills"] += e["kills"]
+        summary_dict[pid]["base"] += e["base_bonus"]
+        summary_dict[pid]["special"] += e["special_bonus"]
+        summary_dict[pid]["total"] += e["net_bonus"]
+        summary_dict[pid]["statuses"].append(e["status"])
 
-@bot.tree.command(name='showall', description='Show all entries in detail')
-async def showall_slash(interaction: discord.Interaction):
+    msg = "📊 **Weekly Player Summary**\n\n"
+    for pid, data in summary_dict.items():
+        all_paid = all(s == "Paid" for s in data["statuses"])
+        status = "✅ Paid" if all_paid else "❌ Due"
+        msg += f"👤 **{data['name']}** | 🆔 {pid}\n"
+        msg += f"Kills: {data['kills']}, Base: ${data['base']:,}, Special: ${data['special']:,}, Total: ${data['total']:,}\n"
+        msg += f"Status: {status}\n\n"
+    await interaction.response.send_message(msg[:1900] if len(msg) > 1900 else msg)
+
+@bot.tree.command(name="showall")
+async def showall(interaction: discord.Interaction):
     entries = load_data()
-    messages = []
+    if not entries:
+        await interaction.response.send_message("📂 No data found.")
+        return
+    msg = ""
     for i, e in enumerate(entries, 1):
-        messages.append(
-            f"{i}. {e['name']}|{e['id']} — {e['date']} {e['time']} — "
-            f"${e['net_bonus']:,} — {e['status']}"
-        )
-    await interaction.response.send_message("\n".join(messages) or 'No entries')
+        msg += f"{i}. **{e['name']}** | ID: {e['id']}\n"
+        msg += f"Event: {e['event_type']} ({e['result']}), Date: {e['date']} {e['time']}\n"
+        msg += f"Kills: {e['kills']} | Base: ${e['base_bonus']:,}, Special: ${e['special_bonus']:,}, Net: ${e['net_bonus']:,}\n"
+        msg += f"Status: {e['status']}\n"
+        if e.get("proof"):
+            msg += f"📸 Proof: {e['proof']}\n"
+        msg += "\n"
+    await interaction.response.send_message(msg[:1900] if len(msg) > 1900 else msg)
 
-@bot.tree.command(name='mark', description='Mark entries Paid or Due')
-@app_commands.describe(player_id='Player ID', status='Paid or Due')
-async def mark_slash(interaction: discord.Interaction, player_id: str, status: str):
-    d = load_data()
+@bot.tree.command(name="mark")
+@app_commands.describe(pid="Player ID", status="Paid or Due")
+async def mark(interaction: discord.Interaction, pid: str, status: str):
+    status = status.capitalize()
+    if status not in ["Paid", "Due"]:
+        await interaction.response.send_message("❌ Status must be either `Paid` or `Due`.")
+        return
+    entries = load_data()
     count = 0
-    for e in d:
-        if e['id'] == player_id:
-            e['status'] = status.capitalize(); count += 1
-    save_data(d)
-    await interaction.response.send_message(f"✅ Marked {count} entries as {status}.")
+    for e in entries:
+        if e["id"] == pid:
+            e["status"] = status
+            count += 1
+    save_data(entries)
+    await interaction.response.send_message(f"✅ Marked {count} entries for ID `{pid}` as `{status}`.")
 
-@bot.tree.command(name='clearall', description='Clear all data (Admin only)')
-async def clearall_slash(interaction: discord.Interaction):
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message('❌ Admin only.', ephemeral=True)
+@bot.tree.command(name="clearall")
+async def clearall(interaction: discord.Interaction):
+    if not any(r.name == "Admin" for r in interaction.user.roles):
+        await interaction.response.send_message("❌ Only users with the `Admin` role can clear data.")
         return
     save_data([])
-    await interaction.response.send_message('🗑️ All data cleared.')
+    await interaction.response.send_message("🗑️ All data has been cleared.")
 
-@bot.tree.command(name='signuplist', description='Show current sign-ups')
-async def signuplist_slash(interaction: discord.Interaction):
-    mentions = [f"<@{uid}>" for uid in signed_up_users]
-    await interaction.response.send_message("\n".join(mentions) or 'No sign-ups yet.')
+@bot.tree.command(name="cmdhelp")
+async def help_command(interaction: discord.Interaction):
+    help_text = """
+**📜 Help — Bonus Bot Guide**
 
-@bot.tree.command(name='help', description='Show bot command help')
-async def help_slash(interaction: discord.Interaction):
-    help_text = (
-        "/add event_type result time date player_data — Add data (newline separated)\n"
-        "/summary — Show total bonus summary\n"
-        "/showall — Show all entries\n"
-        "/mark player_id status — Mark Paid/Due\n"
-        "/clearall — Clear all (Admin only)\n"
-        "/signuplist — List current sign-ups\n"
-    )
+__Slash Commands__:
+- `/add <event_type> <Win/Loss> <time> <date> <PlayerID|PlayerName|Kills>`
+- `/summary`
+- `/mark <PlayerID> <Paid/Due>`
+- `/clearall`
+- `/showall`
+    """
     await interaction.response.send_message(help_text)
 
-# --- Hourly Signup Feature ---
+# --- Hourly Signup ---
 signup_channel_id = 1365834529549582416
 role_id = 1365837910963785808
 signed_up_users = set()
-signup_msg_id = None
+signup_message_id = None
 
-@tasks.loop(hours=1)
+@tasks.loop(minutes=1)
 async def hourly_signup():
     now = datetime.now(pytz.timezone('Asia/Kolkata'))
-    channel = bot.get_channel(signup_channel_id)
-    if channel:
-        signed_up_users.clear()
-        msg = await channel.send(f"<@&{role_id}> Put '+' to sign up for the informal.")
-        global signup_msg_id
-        signup_msg_id = msg.id
+    if now.minute == 0:
+        channel = bot.get_channel(signup_channel_id)
+        if channel:
+            global signed_up_users, signup_message_id
+            signed_up_users = set()
+            msg = await channel.send(f"<@&{role_id}> Put '+' to sign up for the informal.")
+            signup_message_id = msg.id
+            await msg.add_reaction("➕")
 
 @bot.event
 async def on_raw_reaction_add(payload):
-    global signup_msg_id
-    if payload.message_id == signup_msg_id and str(payload.emoji) == "➕" and payload.user_id != bot.user.id:
-        if payload.user_id not in signed_up_users and len(signed_up_users) < 10:
-            signed_up_users.add(payload.user_id)
-        else:
-            ch = bot.get_channel(payload.channel_id)
-            await ch.send("⛔ Cannot sign up.")
+    if payload.user_id == bot.user.id:
+        return
+    global signup_message_id
+    if (payload.message_id == signup_message_id or payload.channel_id == signup_message_id) and str(payload.emoji) == "➕":
+        guild = discord.utils.get(bot.guilds, id=payload.guild_id)
+        member = guild.get_member(payload.user_id)
+        if member and not member.bot:
+            if member.id not in signed_up_users and len(signed_up_users) < 10:
+                signed_up_users.add(member.id)
+            elif member.id in signed_up_users:
+                channel = bot.get_channel(payload.channel_id)
+                if hasattr(channel, 'send'):
+                    await channel.send(f"{member.display_name}, you're already signed up.")
+            else:
+                channel = bot.get_channel(payload.channel_id)
+                if hasattr(channel, 'send'):
+                    await channel.send("⛔ Sign-up limit reached (10 members).")
+
+@bot.tree.command(name="signuplist")
+async def signuplist(interaction: discord.Interaction):
+    if not signed_up_users:
+        await interaction.response.send_message("📭 No one has signed up yet.")
+    else:
+        names = [interaction.guild.get_member(uid).mention for uid in signed_up_users]
+        await interaction.response.send_message("✅ Signed-up Users:\n" + "\n".join(names))
 
 # --- Run the bot ---
 if __name__ == '__main__':
     keep_alive()
     bot.run(TOKEN)
-
