@@ -237,16 +237,19 @@ __Main Commands__:
     await ctx.send(help_text)
 
 # --- Hourly Signup Feature ---
-signup_channel_id = 1365834529549582416  # Replace with your real channel ID
-role_id = 1365837910963785808  # Replace with your real role ID
+signup_channel_id = 1365834529549582416
+role_id = 1365837910963785808
 signed_up_users = set()
 signup_message_id = None
 
 async def wait_until_next_hour():
     now = datetime.now(pytz.timezone('Asia/Kolkata'))
-    seconds_until_next_hour = (60 - now.minute - 1) * 60 + (60 - now.second)
-    print(f"⏳ Waiting {seconds_until_next_hour} seconds until the next full hour...")
-    await asyncio.sleep(seconds_until_next_hour)
+    next_hour = now.replace(minute=0, second=0, microsecond=0)
+    if now.minute != 0 or now.second != 0:
+        next_hour = next_hour.replace(hour=(now.hour + 1) % 24)
+    wait_seconds = (next_hour - now).total_seconds()
+    print(f"⏳ Waiting {int(wait_seconds)} seconds until {next_hour.time()}...")
+    await asyncio.sleep(wait_seconds)
 
 @tasks.loop(hours=1)
 async def hourly_signup():
@@ -264,8 +267,8 @@ async def on_ready():
     if not hourly_signup.is_running():
         await wait_until_next_hour()
         hourly_signup.start()
-        print("📤 Hourly signup started at the top of the hour.")
-
+        print("📤 Hourly signup task started.")
+        
 @bot.command()
 async def signuplist(ctx):
     if not signed_up_users:
