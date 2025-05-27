@@ -87,17 +87,26 @@ async def on_ready():
     hourly_signup.start()
 
 @bot.tree.command(name="add")
-@app_commands.describe(event_type="Type of the event", result="Win or Loss", time="Time of event", date="Date of event", player_data="Player data in Name|ID|Kills format")
+@app_commands.describe(
+    event_type="Type of the event",
+    result="Win or Loss",
+    time="Time of event",
+    date="Date of event",
+    player_data="Player data in Name|ID|Kills format"
+)
 async def add(interaction: discord.Interaction, event_type: str, result: str, time: str, date: str, player_data: str):
+    await interaction.response.defer()  # ✅ Prevents 404 error for long processing
+
     entries = load_data()
     attachment_url = interaction.attachments[0].url if interaction.attachments else None
     lines = player_data.strip().split("\n")
+
     for line in lines:
         try:
             name, pid, kills = [x.strip() for x in line.split("|")]
             kills = int(kills)
         except:
-            await interaction.response.send_message(f"⚠️ Invalid format in line: `{line}`. Use `Name|ID|Kills`.", ephemeral=True)
+            await interaction.followup.send(f"⚠️ Invalid format in line: `{line}`. Use `Name|ID|Kills`.", ephemeral=True)
             return
 
         base_bonus, special_bonus = calculate_bonus(event_type, result, time, kills)
@@ -117,8 +126,9 @@ async def add(interaction: discord.Interaction, event_type: str, result: str, ti
             "proof": attachment_url
         }
         entries.append(entry)
+
     save_data(entries)
-    await interaction.response.send_message("✅ Data added successfully!")
+    await interaction.followup.send("✅ Data added successfully!")
 
 @bot.tree.command(name="summary")
 async def summary(interaction: discord.Interaction):
