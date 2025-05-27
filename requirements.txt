@@ -1,6 +1,5 @@
-discord.py==2.5.2
+discord.py==1.7.3
 flask
 keep_alive
 python-dotenv
-aiohttp
 pytz
