@@ -254,6 +254,7 @@ async def signuplist(ctx):
 
 # --- Run the bot ---
 if __name__ == '__main__':
+    
     keep_alive()  # ✅ Start the web server for uptime ping
     bot.run(TOKEN)
       # Then start your bot
