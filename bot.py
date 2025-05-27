@@ -5,6 +5,7 @@ import json
 import os
 from dotenv import load_dotenv
 import pytz
+import asyncio
 from datetime import datetime
 
 # Load .env variables
@@ -217,34 +218,27 @@ role_id = 1365837910963785808  # Replace with your real role ID
 signed_up_users = set()
 signup_message_id = None
 
-@tasks.loop(minutes=1)
+@tasks.loop(hours=1)
 async def hourly_signup():
-    now = datetime.now(pytz.timezone('Asia/Kolkata'))
-    if now.minute == 0:
-        channel = bot.get_channel(signup_channel_id)
-        if channel:
-            global signed_up_users, signup_message_id
-            signed_up_users = set()
-            msg = await channel.send(f"<@&{role_id}> Put '+' to sign up for the informal.")
-            signup_message_id = msg.id
-            await msg.add_reaction("➕")
+    channel = bot.get_channel(signup_channel_id)
+    if channel:
+        global signed_up_users, signup_message_id
+        signed_up_users = set()
+        msg = await channel.send(f"<@&{role_id}> Put '+' to sign up for the informal.")
+        signup_message_id = msg.id
+        await msg.add_reaction("➕")
 
 @bot.event
-async def on_raw_reaction_add(payload):
-    global signup_message_id
-    if payload.message_id == signup_message_id and str(payload.emoji) == "➕":
-        user = payload.member
-        if user and not user.bot:
-            if user.id not in signed_up_users and len(signed_up_users) < 10:
-                signed_up_users.add(user.id)
-            elif user.id in signed_up_users:
-                channel = bot.get_channel(payload.channel_id)
-                if hasattr(channel, 'send'):
-                    await channel.send(f"{user.display_name}, you're already signed up.")
-            else:
-                channel = bot.get_channel(payload.channel_id)
-                if hasattr(channel, 'send'):
-                    await channel.send("⛔ Sign-up limit reached (10 members).")
+async def on_ready():
+    print(f"✅ Bot is ready as {bot.user}")
+    if not hourly_signup.is_running():
+        now = datetime.now(pytz.timezone("Asia/Kolkata"))
+        seconds_until_next_hour = 3600 - (now.minute * 60 + now.second)
+        print(f"⏳ Waiting {seconds_until_next_hour} seconds to start hourly signup...")
+        await asyncio.sleep(seconds_until_next_hour)
+        hourly_signup.start()
+        print(f"<@&{role_id}> Put '+' to sign up for the informal.")
+
 
 @bot.command()
 async def signuplist(ctx):
